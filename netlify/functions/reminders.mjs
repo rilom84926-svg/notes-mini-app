@@ -95,8 +95,24 @@ export default async (req) => {
     if (!botRequest && !user) return json({ ok: false, error: 'invalid_init_data' }, 401);
 
     const store = getStore(STORE);
-    const body = req.method === 'DELETE' ? await req.json() : await req.json();
+    const body = await req.json();
     const id = body?.id;
+
+    if (req.method === 'POST' && botRequest && body?.action === 'mark_sent') {
+      if (!id) return json({ ok: false, error: 'missing_id' }, 400);
+      const existing = await store.get(`r/${id}`, { type: 'json' });
+      if (!existing) return json({ ok: false, error: 'not_found' }, 404);
+      const incomingLast = body.last_sent ? String(body.last_sent) : '';
+      const existingLast = existing.last_sent ? String(existing.last_sent) : '';
+      // Никогда не откатываем состояние доставки назад. Это делает
+      // облачное состояние источником истины после перезапуска бота.
+      existing.last_sent = [existingLast, incomingLast].filter(Boolean).sort().pop() || null;
+      if (body.delivery_key) existing.delivery_key = String(body.delivery_key);
+      if (typeof body.enabled === 'boolean') existing.enabled = body.enabled;
+      existing.updated_at = new Date().toISOString();
+      await store.setJSON(`r/${id}`, existing);
+      return json({ ok: true, item: existing });
+    }
 
     if (req.method === 'DELETE') {
       if (!id) return json({ ok: false, error: 'missing_id' }, 400);
