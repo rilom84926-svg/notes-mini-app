@@ -433,6 +433,35 @@
   setMode(currentMode);
 
   // ==================================================================
+  // Инициализация колёсика времени
+  // В v6 контроллер был объявлен, но сами колёса не создавались —
+  // поэтому в интерфейсе оставался только двоеточие.
+  // ==================================================================
+  const wheelHoursEl = document.getElementById("wheelHours");
+  const wheelMinutesEl = document.getElementById("wheelMinutes");
+
+  let selectedHour = 0;
+  let selectedMinute = 0;
+  const now = new Date();
+  const initialTime = String(prefill?.time || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (initialTime) {
+    selectedHour = Math.max(0, Math.min(23, Number(initialTime[1])));
+    selectedMinute = Math.max(0, Math.min(59, Number(initialTime[2])));
+  } else {
+    selectedHour = now.getHours();
+    selectedMinute = now.getMinutes();
+  }
+
+  const hoursWheel = wheelController(
+    wheelHoursEl, 23, selectedHour,
+    (value) => { selectedHour = value; }
+  );
+  const minutesWheel = wheelController(
+    wheelMinutesEl, 59, selectedMinute,
+    (value) => { selectedMinute = value; }
+  );
+
+  // ==================================================================
   // Валидация + кнопка сохранения
   // ==================================================================
   const ACCENT = getComputedStyle(root).getPropertyValue("--accent").trim() || "#8C7CF0";
