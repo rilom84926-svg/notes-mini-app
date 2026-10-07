@@ -1133,3 +1133,40 @@ body::after { right: -120px; top: 420px; background: var(--sunrise); }
   cursor: pointer;
 }
 .save-fallback:disabled { opacity: .45; cursor: default; box-shadow: none; }
+
+/* ============================================================
+   v9: главная = список напоминалок, «+» внизу, редактор отдельно
+   ============================================================ */
+.screen { padding-bottom: 104px; }
+.home-reminders { position: relative; margin: 4px 0 0; }
+.home-reminders .my-reminders-head { margin-bottom: 14px; }
+#viewHome.hidden, #viewEditor.hidden, .fab.hidden, #backBtn.hidden, .head-logo.hidden { display: none; }
+
+.fab {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+  transform: translateX(-50%);
+  z-index: 30;
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 38px;
+  font-weight: 300;
+  line-height: 1;
+  padding: 0 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 10px 26px var(--accent-soft), 0 4px 14px rgba(0,0,0,.35);
+  transition: transform .15s ease;
+}
+.fab:active { transform: translateX(-50%) scale(.92); }
+
+/* В редакторе кнопка сохранения — обычная, не липкая */
+.save-bar { position: static; margin: 14px 0 4px; }

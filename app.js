@@ -65,26 +65,19 @@
   // «+» — новая напоминалка (сбрасываем форму, уходим из режима редактирования)
   document.getElementById("menuNew").addEventListener("click", () => {
     tg?.HapticFeedback?.impactOccurred("light");
-    if (location.search) {
-      window.location.href = location.pathname;
-    } else {
-      closeSheet();
-    }
+    closeSheet();
+    openEditor(null);
   });
 
-  document.getElementById("bottomNewReminder")?.addEventListener("click", () => {
+  document.getElementById("fabAdd").addEventListener("click", () => {
     tg?.HapticFeedback?.impactOccurred("light");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    taskText?.focus();
+    openEditor(null);
   });
 
-  // «Мои напоминалки» теперь находятся прямо в нижней части интерфейса.
   document.getElementById("menuList").addEventListener("click", () => {
     tg?.HapticFeedback?.impactOccurred("light");
     closeSheet();
-    document.getElementById("myRemindersSection")?.scrollIntoView({
-      behavior: "smooth", block: "start"
-    });
+    showHome();
   });
 
   // ==================================================================
@@ -98,10 +91,12 @@
   }
 
   const params = new URLSearchParams(location.search);
-  const editing = params.get("mode") === "edit";
+  const urlEditing = params.get("mode") === "edit";
+  let editing = false;
   let prefill = null;
-  if (editing && params.get("data")) {
-    try { prefill = decodePayload(params.get("data")); } catch { prefill = null; }
+  let urlPrefill = null;
+  if (urlEditing && params.get("data")) {
+    try { urlPrefill = decodePayload(params.get("data")); } catch { urlPrefill = null; }
   }
 
   // Список напоминаний хранится на сервере по Telegram user_id.
@@ -165,7 +160,7 @@
     list.innerHTML = "";
     empty.classList.toggle("hidden", items.length !== 0);
 
-    items.slice(0, 8).forEach((item) => {
+    items.forEach((item) => {
       const card = document.createElement("article");
       card.className = "reminder-item";
       const top = document.createElement("div"); top.className = "reminder-item-top";
@@ -180,10 +175,7 @@
       const editBtn = document.createElement("button");
       editBtn.type = "button"; editBtn.className = "reminder-mini-btn"; editBtn.textContent = "Изменить";
       editBtn.addEventListener("click", () => {
-        const editData = { ...item, id: item.server_id || item.id };
-        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(editData))))
-          .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-        window.location.href = `${location.pathname}?mode=edit&data=${encoded}`;
+        openEditor({ ...item, id: item.server_id || item.id });
       });
       actions.append(editBtn);
 
@@ -230,15 +222,13 @@
     }
   }
 
-  renderReminderCache();
-  loadRemoteReminders();
-
   const headLogo = document.getElementById("headLogo");
   const headSub = document.getElementById("headSub");
-  if (editing) {
-    headLogo.textContent = "✏️";
-    headSub.textContent = "Изменить напоминалку";
-  }
+  const headTitle = document.getElementById("headTitle");
+  const backBtn = document.getElementById("backBtn");
+  const viewHome = document.getElementById("viewHome");
+  const viewEditor = document.getElementById("viewEditor");
+  const fabAdd = document.getElementById("fabAdd");
 
   // ==================================================================
   // Колесо выбора времени — настоящее циклическое колесо без «прыжков».
@@ -359,8 +349,7 @@
   // Текст задачи
   // ==================================================================
   const taskText = document.getElementById("taskText");
-  if (prefill?.text) taskText.value = prefill.text;
-  taskText.addEventListener("input", validate);
+    taskText.addEventListener("input", validate);
 
   // ==================================================================
   // Режим повтора
@@ -371,7 +360,7 @@
     weekly: document.getElementById("paneWeekly"),
     interval: document.getElementById("paneInterval"),
   };
-  let currentMode = prefill?.mode || "once";
+  let currentMode = "once";
 
   function setMode(mode) {
     currentMode = mode;
@@ -388,14 +377,13 @@
   const onceDate = document.getElementById("onceDate");
   const todayStr = localDateStr();
   onceDate.min = todayStr;
-  onceDate.value = prefill?.date || todayStr;
+  onceDate.value = todayStr;
   onceDate.addEventListener("input", validate);
 
   const dayPills = Array.from(document.querySelectorAll(".day-pill"));
-  const selectedDays = new Set(prefill?.weekdays || []);
+  const selectedDays = new Set();
   dayPills.forEach((pill) => {
     const day = parseInt(pill.dataset.day, 10);
-    pill.classList.toggle("active", selectedDays.has(day));
     pill.addEventListener("click", () => {
       tg?.HapticFeedback?.selectionChanged();
       if (selectedDays.has(day)) selectedDays.delete(day); else selectedDays.add(day);
@@ -408,10 +396,10 @@
   const intervalUnitEl = document.getElementById("intervalUnit");
   const startDate = document.getElementById("startDate");
   startDate.min = todayStr;
-  startDate.value = prefill?.start_date || todayStr;
+  startDate.value = todayStr;
   startDate.addEventListener("input", validate);
 
-  let intervalDays = prefill?.interval_days || 1;
+  let intervalDays = 1;
 
   function pluralDays(n) {
     const mod10 = n % 10, mod100 = n % 100;
@@ -449,24 +437,21 @@
 
   let selectedHour = 0;
   let selectedMinute = 0;
-  const now = new Date();
-  const initialTime = String(prefill?.time || "").match(/^(\d{1,2}):(\d{2})$/);
-  if (initialTime) {
-    selectedHour = Math.max(0, Math.min(23, Number(initialTime[1])));
-    selectedMinute = Math.max(0, Math.min(59, Number(initialTime[2])));
-  } else {
-    selectedHour = now.getHours();
-    selectedMinute = now.getMinutes();
-  }
+  let hoursWheel = null;
+  let minutesWheel = null;
 
-  const hoursWheel = wheelController(
-    wheelHoursEl, 23, selectedHour,
-    (value) => { selectedHour = value; }
-  );
-  const minutesWheel = wheelController(
-    wheelMinutesEl, 59, selectedMinute,
-    (value) => { selectedMinute = value; }
-  );
+  function setWheelsTime(h, m) {
+    selectedHour = h;
+    selectedMinute = m;
+    // Колёса можно создавать/двигать только когда экран виден.
+    if (!hoursWheel) {
+      hoursWheel = wheelController(wheelHoursEl, 23, h, (v) => { selectedHour = v; });
+      minutesWheel = wheelController(wheelMinutesEl, 59, m, (v) => { selectedMinute = v; });
+    } else {
+      hoursWheel.scrollTo(h, false);
+      minutesWheel.scrollTo(m, false);
+    }
+  }
 
   // ==================================================================
   // Валидация + кнопка сохранения
@@ -503,7 +488,7 @@
       timezone,
       theme: localStorage.getItem("rem_theme") || "classic",
     };
-    if (prefill?.id) payload.id = prefill.id;
+    if (editing && prefill?.id) payload.id = prefill.id;
     if (currentMode === "once") payload.date = onceDate.value;
     if (currentMode === "weekly") payload.weekdays = Array.from(selectedDays).sort((a, b) => a - b);
     if (currentMode === "interval") {
@@ -551,31 +536,66 @@
     return data.item;
   }
 
-  function resetFormForNextReminder() {
-    taskText.value = "";
-    currentMode = "once";
-    segButtons.forEach((b) => b.classList.toggle("active", b.dataset.mode === "once"));
-    Object.entries(panes).forEach(([key, el]) => el.classList.toggle("hidden", key !== "once"));
-    selectedDays.clear();
-    dayPills.forEach((p) => p.classList.remove("active"));
-    intervalDays = 1;
-    renderInterval();
-    const today = localDateStr();
-    onceDate.value = today;
-    startDate.value = today;
-    const d = new Date();
-    selectedHour = d.getHours();
-    selectedMinute = d.getMinutes();
-    hoursWheel.scrollTo(selectedHour, false);
-    minutesWheel.scrollTo(selectedMinute, false);
+  function showHome() {
+    editing = false;
+    prefill = null;
+    viewEditor.classList.add("hidden");
+    viewHome.classList.remove("hidden");
+    fabAdd.classList.remove("hidden");
+    backBtn.classList.add("hidden");
+    headLogo.classList.remove("hidden");
     headLogo.textContent = "⏰";
-    headSub.textContent = "Во сколько напомнить?";
-    const saveButton = document.getElementById("saveFallback");
-    if (saveButton) saveButton.textContent = "Сохранить";
-    validate();
-    taskText.focus();
-    loadRemoteReminders();
+    headTitle.textContent = "Напоминалки";
+    headSub.textContent = "Активные напоминалки";
+    try { tg?.BackButton?.hide(); } catch (_) {}
+    if (location.search) history.replaceState(null, "", location.pathname);
+    renderReminderCache();
+    window.scrollTo({ top: 0 });
   }
+
+  function openEditor(item) {
+    editing = !!item;
+    prefill = item || null;
+    const today = localDateStr();
+
+    taskText.value = item?.text || "";
+    selectedDays.clear();
+    (item?.weekdays || []).forEach((d) => selectedDays.add(Number(d)));
+    dayPills.forEach((p) =>
+      p.classList.toggle("active", selectedDays.has(parseInt(p.dataset.day, 10))));
+    intervalDays = Number(item?.interval_days) || 1;
+    renderInterval();
+    onceDate.value = item?.date || today;
+    startDate.value = item?.start_date || today;
+    setMode(item?.mode || "once");
+
+    viewHome.classList.add("hidden");
+    viewEditor.classList.remove("hidden");
+    fabAdd.classList.add("hidden");
+    backBtn.classList.remove("hidden");
+    headLogo.classList.add("hidden");
+    headTitle.textContent = editing ? "Изменить" : "Новая напоминалка";
+    headSub.textContent = "Во сколько напомнить?";
+    try { tg?.BackButton?.show(); } catch (_) {}
+    window.scrollTo({ top: 0 });
+
+    const m = String(item?.time || "").match(/^(\d{1,2}):(\d{2})$/);
+    const d = new Date();
+    setWheelsTime(
+      m ? Math.min(23, Number(m[1])) : d.getHours(),
+      m ? Math.min(59, Number(m[2])) : d.getMinutes()
+    );
+
+    const saveButton = document.getElementById("saveFallback");
+    if (saveButton) saveButton.textContent = editing ? "Сохранить изменения" : "Сохранить";
+    resetSaveState();
+  }
+
+  backBtn.addEventListener("click", () => {
+    tg?.HapticFeedback?.impactOccurred("light");
+    showHome();
+  });
+  try { tg?.BackButton?.onClick(showHome); } catch (_) {}
 
   async function handleSave() {
     if (saving) return;
@@ -608,11 +628,7 @@
       tg?.HapticFeedback?.notificationOccurred("success");
       if (tg?.MainButton) tg.MainButton.hideProgress();
       if (fb) fb.textContent = editing ? "Изменения сохранены ✓" : "Сохранено ✓";
-      if (!editing) {
-        setTimeout(() => resetFormForNextReminder(), 450);
-      } else {
-        setTimeout(() => { window.location.href = location.pathname; }, 500);
-      }
+      setTimeout(() => { showHome(); loadRemoteReminders(); }, 450);
       return;
     } catch (apiError) {
       console.warn("Mini App API save failed, trying Telegram sendData", apiError);
@@ -648,5 +664,7 @@
   tg?.MainButton?.hide();
 
   applyTheme();
-  validate();
+  renderReminderCache();
+  loadRemoteReminders();
+  if (urlEditing && urlPrefill) openEditor(urlPrefill); else showHome();
 })();
