@@ -226,8 +226,10 @@ body {
   scrollbar-width: none;
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
-  mask-image: linear-gradient(to bottom, transparent 0, #000 36%, #000 64%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 36%, #000 64%, transparent 100%);
+  /* Не используем CSS mask: Telegram WebView на некоторых устройствах
+     отрисовывает замаскированные элементы как пустые. */
+  mask-image: none;
+  -webkit-mask-image: none;
 }
 .time-wheel::-webkit-scrollbar { display: none; }
 
@@ -241,6 +243,8 @@ body {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--text-dim);
+  line-height: 54px;
+  opacity: 1;
   transition: color .15s ease;
   user-select: none;
   -webkit-user-select: none;
@@ -1100,20 +1104,32 @@ body::after { right: -120px; top: 420px; background: var(--sunrise); }
 /* FINAL FIX: stable wheel + always-visible save button */
 .time-wheel { scroll-snap-type: y mandatory; }
 .time-wheel .cell { height: 54px; }
-.save-bar { position: sticky; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); z-index: 20; margin: 14px 0 4px; }
+.save-bar {
+  position: sticky;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  z-index: 20;
+  margin: 12px 0 4px;
+  padding: 0;
+}
 .save-fallback {
+  position: static;
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 52px;
-  padding: 13px 18px;
+  max-width: 100%;
+  min-height: 46px;
+  height: 46px;
+  padding: 8px 14px;
+  margin: 0;
   border: 0;
-  border-radius: 16px;
+  border-radius: 13px;
   background: var(--accent);
   color: #fff;
   font: inherit;
-  font-size: 16px;
+  font-size: 15px;
+  line-height: 1.1;
   font-weight: 800;
-  box-shadow: 0 10px 26px var(--accent-soft);
+  box-shadow: 0 7px 18px var(--accent-soft);
   cursor: pointer;
 }
 .save-fallback:disabled { opacity: .45; cursor: default; box-shadow: none; }
