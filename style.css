@@ -1096,3 +1096,24 @@ body::after { right: -120px; top: 420px; background: var(--sunrise); }
 .hero-card .hero-art { display: none; }
 .hero-copy { width: 100%; }
 .hero-card { min-height: 108px; }
+
+/* FINAL FIX: stable wheel + always-visible save button */
+.time-wheel { scroll-snap-type: y mandatory; }
+.time-wheel .cell { height: 54px; }
+.save-bar { position: sticky; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); z-index: 20; margin: 14px 0 4px; }
+.save-fallback {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  padding: 13px 18px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: 0 10px 26px var(--accent-soft);
+  cursor: pointer;
+}
+.save-fallback:disabled { opacity: .45; cursor: default; box-shadow: none; }

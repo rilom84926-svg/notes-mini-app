@@ -241,18 +241,21 @@
   }
 
   // ==================================================================
-  // Колесо выбора времени
+  // Колесо выбора времени — настоящее циклическое колесо без «прыжков».
+  // Высота ячейки синхронизирована с CSS: 54px.
   // ==================================================================
-  const CELL_H = 56;
-  const WRAP_H = 176;
+  const CELL_H = 54;
+  const WRAP_H = 164;
   const SPACER = (WRAP_H - CELL_H) / 2;
 
-  function buildWheel(container, max, initial) {
+  function wheelController(container, max, initial, onChange) {
     const count = max + 1;
-    const copies = 7;
+    const copies = 9;
     const middle = Math.floor(copies / 2);
     const top = document.createElement("div");
-    top.style.height = SPACER + "px"; container.appendChild(top);
+    top.style.height = SPACER + "px";
+    container.appendChild(top);
+
     for (let copy = 0; copy < copies; copy++) {
       for (let i = 0; i < count; i++) {
         const cell = document.createElement("div");
@@ -262,87 +265,88 @@
         container.appendChild(cell);
       }
     }
-    const bottom = document.createElement("div");
-    bottom.style.height = SPACER + "px"; container.appendChild(bottom);
-    return { count, copies, middle, initialIndex: middle * count + initial };
-  }
 
-  function wheelController(container, max, initial, onChange) {
-    const meta = buildWheel(container, max, initial);
+    const bottom = document.createElement("div");
+    bottom.style.height = SPACER + "px";
+    container.appendChild(bottom);
+
     const cells = Array.from(container.querySelectorAll(".cell"));
-    let current = initial;
+    let current = Number(initial) || 0;
     let correcting = false;
+    let settleTimer = null;
+
+    const middleIndex = (value) => middle * count + ((Number(value) % count) + count) % count;
 
     function paint(index) {
-      cells.forEach((c, i) => c.classList.toggle("is-center", i === index));
+      cells.forEach((cell, i) => cell.classList.toggle("is-center", i === index));
     }
 
-    function centerIndex(index) {
-      const value = ((index % meta.count) + meta.count) % meta.count;
-      return meta.middle * meta.count + value;
+    function moveToIndex(index, smooth = true) {
+      container.scrollTo({
+        top: index * CELL_H,
+        behavior: smooth ? "smooth" : "auto",
+      });
+      paint(index);
     }
 
-    function scrollTo(index, smooth) {
-      const safe = Math.max(0, Math.min(cells.length - 1, index));
-      container.scrollTo({ top: safe * CELL_H, behavior: smooth ? "smooth" : "auto" });
-      paint(safe);
+    function settle() {
+      if (correcting) return;
+      let index = Math.round(container.scrollTop / CELL_H);
+      index = Math.max(0, Math.min(cells.length - 1, index));
+      const value = ((index % count) + count) % count;
+      const centered = middleIndex(value);
+
+      // Сначала даём браузеру самому закончить native scroll-snap.
+      moveToIndex(index, true);
+      paint(index);
+
+      if (value !== current) {
+        current = value;
+        tg?.HapticFeedback?.selectionChanged();
+        onChange(value);
+      }
+
+      // Если подошли к краю копий — мгновенно переносим на ту же цифру
+      // в центральную копию. Пользователь этого не замечает.
+      if (index < count || index >= count * (copies - 2)) {
+        correcting = true;
+        container.scrollTo({ top: centered * CELL_H, behavior: "auto" });
+        paint(centered);
+        correcting = false;
+      }
     }
 
-    let scrollTimer = null;
     container.addEventListener("scroll", () => {
       if (correcting) return;
-      clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(() => {
-        let index = Math.round(container.scrollTop / CELL_H);
-        index = Math.max(0, Math.min(cells.length - 1, index));
-        const value = ((index % meta.count) + meta.count) % meta.count;
-        const centered = centerIndex(index);
-        if (index < meta.count || index > meta.count * (meta.copies - 2)) {
-          correcting = true;
-          container.scrollTo({ top: centered * CELL_H, behavior: "auto" });
-          index = centered;
-          correcting = false;
-        } else {
-          scrollTo(index, true);
-        }
-        paint(index);
-        if (value !== current) {
-          current = value;
-          tg?.HapticFeedback?.selectionChanged();
-          onChange(value);
-        }
-      }, 70);
-    });
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(settle, 180);
 
-    scrollTo(meta.initialIndex, false);
-    paint(meta.initialIndex);
-    return { scrollTo: (value, smooth = true) => scrollTo(centerIndex(value), smooth), get value() { return current; } };
+      // Во время прокрутки сразу показываем ближайшее значение, но НЕ
+      // вмешиваемся в позицию scrollTop. Это устраняет эффект «35 → 36».
+      const index = Math.max(0, Math.min(cells.length - 1,
+        Math.round(container.scrollTop / CELL_H)));
+      const value = ((index % count) + count) % count;
+      paint(index);
+      if (value !== current) {
+        current = value;
+        tg?.HapticFeedback?.selectionChanged();
+        onChange(value);
+      }
+    }, { passive: true });
+
+    const initialIndex = middleIndex(initial);
+    container.scrollTo({ top: initialIndex * CELL_H, behavior: "auto" });
+    paint(initialIndex);
+
+    return {
+      scrollTo(value, smooth = true) {
+        const index = middleIndex(value);
+        current = Number(value);
+        moveToIndex(index, smooth);
+      },
+      get value() { return current; },
+    };
   }
-
-  function parsePrefillTime(value) {
-    const m = /^([01]?\d|2[0-3]):([0-5]?\d)$/.exec(String(value || ""));
-    if (!m) return null;
-    return { h: parseInt(m[1], 10), m: parseInt(m[2], 10) };
-  }
-
-  const now = new Date();
-  const localDateStr = (d = new Date()) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
-  const pfTime = prefill ? parsePrefillTime(prefill.time) : null;
-  const initHour = pfTime ? pfTime.h : now.getHours();
-  const initMinute = pfTime ? pfTime.m : now.getMinutes();
-
-  let selectedHour = initHour;
-  let selectedMinute = initMinute;
-
-  const hoursWheel = wheelController(document.getElementById("wheelHours"), 23, initHour,
-    (v) => { selectedHour = v; validate(); });
-  const minutesWheel = wheelController(document.getElementById("wheelMinutes"), 59, initMinute,
-    (v) => { selectedMinute = v; validate(); });
 
   // ==================================================================
   // Текст задачи
@@ -452,8 +456,10 @@
   }
 
   function buildPayload() {
-    let timezone = "UTC";
-    try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) {}
+    // Расписание бота работает в одном заданном часовом поясе.
+    // Не берём часовой пояс устройства: иначе один и тот же будильник
+    // мог сдвигаться на другом телефоне/компьютере.
+    const timezone = "Europe/Moscow";
     const payload = {
       text: taskText.value.trim(),
       time: `${String(selectedHour).padStart(2, "0")}:${String(selectedMinute).padStart(2, "0")}`,
@@ -528,7 +534,8 @@
     minutesWheel.scrollTo(selectedMinute, false);
     headLogo.textContent = "⏰";
     headSub.textContent = "Во сколько напомнить?";
-    if (fb) fb.textContent = "Сохранить";
+    const saveButton = document.getElementById("saveFallback");
+    if (saveButton) saveButton.textContent = "Сохранить";
     validate();
     taskText.focus();
     loadRemoteReminders();
@@ -593,27 +600,16 @@
     alert("Не удалось сохранить напоминание. Проверьте подключение Mini App к серверу.");
   }
 
-  // Всегда используем одну обработку нажатия. Это устраняет накопление
-  // обработчиков при повторной инициализации WebApp.
-  if (tg?.MainButton) {
-    tg.MainButton.setParams({
-      text: editing ? "Сохранить изменения" : "Сохранить",
-      color: ACCENT,
-      text_color: "#FFFFFF",
-    });
-    tg.MainButton.onClick(handleSave);
-    tg.MainButton.show();
-  } else {
-    const fb = document.createElement("button");
-    fb.id = "saveFallback";
-    fb.type = "button";
-    fb.className = "save-fallback";
+  // Видимая кнопка сохранения находится внутри Mini App, поэтому она
+  // одинаково доступна при Open/Menu, на iOS/Android и в режиме редактирования.
+  const fb = document.getElementById("saveFallback");
+  if (fb) {
     fb.textContent = editing ? "Сохранить изменения" : "Сохранить";
     fb.addEventListener("click", handleSave);
-    document.body.appendChild(fb);
-    document.getElementById("bottomHint").textContent =
-      "Откройте форму через Telegram, чтобы сохранить напоминание.";
   }
+  // Нативную MainButton Telegram скрываем, чтобы не было двух одинаковых
+  // кнопок и чтобы логика сохранения была единой.
+  tg?.MainButton?.hide();
 
   applyTheme();
   validate();
