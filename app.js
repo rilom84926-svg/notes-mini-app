@@ -244,6 +244,11 @@
   // Колесо выбора времени — настоящее циклическое колесо без «прыжков».
   // Высота ячейки синхронизирована с CSS: 54px.
   // ==================================================================
+  function localDateStr(d = new Date()) {
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
   const CELL_H = 54;
   const WRAP_H = 164;
   const SPACER = (WRAP_H - CELL_H) / 2;
@@ -296,8 +301,10 @@
       const value = ((index % count) + count) % count;
       const centered = middleIndex(value);
 
-      // Сначала даём браузеру самому закончить native scroll-snap.
-      moveToIndex(index, true);
+      // Ровно фиксируем ячейку по центру (без анимации — snap уже отработал).
+      if (Math.abs(container.scrollTop - index * CELL_H) > 0.5) {
+        container.scrollTo({ top: index * CELL_H, behavior: "auto" });
+      }
       paint(index);
 
       if (value !== current) {
@@ -308,7 +315,7 @@
 
       // Если подошли к краю копий — мгновенно переносим на ту же цифру
       // в центральную копию. Пользователь этого не замечает.
-      if (index < count || index >= count * (copies - 2)) {
+      if (index < count * 2 || index >= count * (copies - 2)) {
         correcting = true;
         container.scrollTo({ top: centered * CELL_H, behavior: "auto" });
         paint(centered);
