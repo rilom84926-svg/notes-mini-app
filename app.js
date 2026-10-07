@@ -104,38 +104,41 @@
     try { prefill = decodePayload(params.get("data")); } catch { prefill = null; }
   }
 
-  // Локальный список — быстрый экранный кэш для нижнего блока «Мои напоминалки».
-  // Сам бот остаётся источником истины; здесь мы лишь запоминаем то, что
-  // пользователь только что сохранил на этом устройстве.
-  const REMINDER_CACHE_KEY = "notes_reminders_cache_v2";
+  // Список напоминаний хранится на сервере по Telegram user_id.
+  // localStorage используется только как быстрый кэш до ответа API.
+  const REMINDER_CACHE_KEY = "notes_reminders_cache_v3";
 
   function readReminderCache() {
     try {
       const value = JSON.parse(localStorage.getItem(REMINDER_CACHE_KEY) || "[]");
       return Array.isArray(value) ? value : [];
-    } catch (_) {
-      return [];
-    }
+    } catch (_) { return []; }
   }
 
   function writeReminderCache(items) {
-    try {
-      localStorage.setItem(REMINDER_CACHE_KEY, JSON.stringify(items.slice(0, 30)));
-    } catch (_) {}
+    try { localStorage.setItem(REMINDER_CACHE_KEY, JSON.stringify(items.slice(0, 50))); } catch (_) {}
   }
 
   function cacheReminder(item) {
     if (!item?.text || !item?.time || !item?.mode) return;
-    const items = readReminderCache();
-    const serverId = item.id || null;
-    const id = serverId || `local_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    const next = { ...item, id, server_id: serverId, saved_at: Date.now() };
-    const filtered = items.filter((x) => x.id !== id);
-    writeReminderCache([next, ...filtered]);
+    const serverId = item.id || item.server_id || null;
+    if (!serverId) return;
+    const next = { ...item, id: serverId, server_id: serverId, saved_at: Date.now() };
+    const items = readReminderCache().filter((x) => (x.server_id || x.id) !== serverId);
+    writeReminderCache([next, ...items]);
+  }
+
+  function replaceReminderCache(items) {
+    const normalized = (Array.isArray(items) ? items : [])
+      .filter((x) => x?.id && x?.text && x?.time && x?.mode)
+      .map((x) => ({ ...x, server_id: x.id }));
+    normalized.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+    writeReminderCache(normalized);
+    renderReminderCache();
   }
 
   function removeCachedReminder(id) {
-    writeReminderCache(readReminderCache().filter((x) => x.id !== id));
+    writeReminderCache(readReminderCache().filter((x) => (x.server_id || x.id) !== id));
     renderReminderCache();
   }
 
@@ -148,7 +151,8 @@
       const days = (item.weekdays || []).map(Number).sort((a,b) => a-b);
       return `По дням · ${days.map((d) => names[d]).join(", ") || "—"}`;
     }
-    return `Каждые ${item.interval_days || 1} ${(item.interval_days || 1) === 1 ? "день" : "дня"}`;
+    const n = Number(item.interval_days || 1);
+    return `Каждые ${n} ${n === 1 ? "день" : (n < 5 ? "дня" : "дней")}`;
   }
 
   function renderReminderCache() {
@@ -156,94 +160,78 @@
     const empty = document.getElementById("myRemindersEmpty");
     const count = document.getElementById("myRemindersCount");
     if (!list || !empty || !count) return;
-
     const items = readReminderCache();
     count.textContent = String(items.length);
     list.innerHTML = "";
-
     empty.classList.toggle("hidden", items.length !== 0);
 
     items.slice(0, 8).forEach((item) => {
       const card = document.createElement("article");
       card.className = "reminder-item";
-
-      const top = document.createElement("div");
-      top.className = "reminder-item-top";
-
-      const time = document.createElement("strong");
-      time.className = "reminder-item-time";
-      time.textContent = item.time;
-
-      const badge = document.createElement("span");
-      badge.className = "reminder-item-badge";
+      const top = document.createElement("div"); top.className = "reminder-item-top";
+      const time = document.createElement("strong"); time.className = "reminder-item-time"; time.textContent = item.time;
+      const badge = document.createElement("span"); badge.className = "reminder-item-badge";
       badge.textContent = item.mode === "once" ? "РАЗОВО" : item.mode === "weekly" ? "ПО ДНЯМ" : "ИНТЕРВАЛ";
-
       top.append(time, badge);
+      const text = document.createElement("div"); text.className = "reminder-item-text"; text.textContent = item.text;
+      const meta = document.createElement("div"); meta.className = "reminder-item-meta"; meta.textContent = formatSchedule(item);
+      const actions = document.createElement("div"); actions.className = "reminder-item-actions";
 
-      const text = document.createElement("div");
-      text.className = "reminder-item-text";
-      text.textContent = item.text;
-
-      const meta = document.createElement("div");
-      meta.className = "reminder-item-meta";
-      meta.textContent = formatSchedule(item);
-
-      const actions = document.createElement("div");
-      actions.className = "reminder-item-actions";
-
-      if (item.server_id) {
-        const editBtn = document.createElement("button");
-        editBtn.type = "button";
-        editBtn.className = "reminder-mini-btn";
-        editBtn.textContent = "Изменить";
-        editBtn.addEventListener("click", () => {
-          const editData = { ...item, id: item.server_id };
-          const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(editData))))
-            .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-          window.location.href = `${location.pathname}?mode=edit&data=${encoded}`;
-        });
-        actions.append(editBtn);
-      }
+      const editBtn = document.createElement("button");
+      editBtn.type = "button"; editBtn.className = "reminder-mini-btn"; editBtn.textContent = "Изменить";
+      editBtn.addEventListener("click", () => {
+        const editData = { ...item, id: item.server_id || item.id };
+        const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(editData))))
+          .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+        window.location.href = `${location.pathname}?mode=edit&data=${encoded}`;
+      });
+      actions.append(editBtn);
 
       const deleteBtn = document.createElement("button");
-      deleteBtn.type = "button";
-      deleteBtn.className = "reminder-mini-btn danger";
-      deleteBtn.textContent = "Убрать";
+      deleteBtn.type = "button"; deleteBtn.className = "reminder-mini-btn danger"; deleteBtn.textContent = "Убрать";
       deleteBtn.addEventListener("click", async () => {
-        if (!item.server_id) {
-          removeCachedReminder(item.id);
-          return;
-        }
-        deleteBtn.disabled = true;
-        deleteBtn.textContent = "Удаляем…";
+        const id = item.server_id || item.id;
+        deleteBtn.disabled = true; deleteBtn.textContent = "Удаляем…";
         try {
           const response = await fetch("/.netlify/functions/reminders", {
             method: "DELETE",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Telegram-Init-Data": tg?.initData || "",
-            },
-            body: JSON.stringify({ id: item.server_id }),
+            headers: { "Content-Type": "application/json", "X-Telegram-Init-Data": tg?.initData || "" },
+            body: JSON.stringify({ id }),
           });
           const data = await response.json().catch(() => ({}));
           if (!response.ok || !data.ok) throw new Error(data.error || `API ${response.status}`);
-          removeCachedReminder(item.id);
+          removeCachedReminder(id);
           tg?.HapticFeedback?.notificationOccurred("success");
         } catch (err) {
           console.error("Delete reminder failed", err);
-          deleteBtn.disabled = false;
-          deleteBtn.textContent = "Убрать";
+          deleteBtn.disabled = false; deleteBtn.textContent = "Убрать";
           alert("Не удалось удалить напоминание.");
         }
       });
-
       actions.append(deleteBtn);
-      card.append(top, text, meta, actions);
-      list.appendChild(card);
+      card.append(top, text, meta, actions); list.appendChild(card);
     });
   }
 
+  async function loadRemoteReminders() {
+    const initData = tg?.initData || "";
+    if (!initData) return;
+    try {
+      const response = await fetch("/.netlify/functions/reminders", {
+        headers: { "X-Telegram-Init-Data": initData },
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) throw new Error(data.error || `API ${response.status}`);
+      replaceReminderCache(data.reminders || []);
+    } catch (err) {
+      console.warn("Не удалось загрузить напоминания пользователя", err);
+      renderReminderCache();
+    }
+  }
+
   renderReminderCache();
+  loadRemoteReminders();
 
   const headLogo = document.getElementById("headLogo");
   const headSub = document.getElementById("headSub");
@@ -259,54 +247,76 @@
   const WRAP_H = 176;
   const SPACER = (WRAP_H - CELL_H) / 2;
 
-  function buildWheel(container, max) {
+  function buildWheel(container, max, initial) {
+    const count = max + 1;
+    const copies = 7;
+    const middle = Math.floor(copies / 2);
     const top = document.createElement("div");
-    top.style.height = SPACER + "px";
-    container.appendChild(top);
-    for (let i = 0; i <= max; i++) {
-      const cell = document.createElement("div");
-      cell.className = "cell";
-      cell.textContent = String(i).padStart(2, "0");
-      cell.dataset.value = String(i);
-      container.appendChild(cell);
+    top.style.height = SPACER + "px"; container.appendChild(top);
+    for (let copy = 0; copy < copies; copy++) {
+      for (let i = 0; i < count; i++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.textContent = String(i).padStart(2, "0");
+        cell.dataset.value = String(i);
+        container.appendChild(cell);
+      }
     }
     const bottom = document.createElement("div");
-    bottom.style.height = SPACER + "px";
-    container.appendChild(bottom);
+    bottom.style.height = SPACER + "px"; container.appendChild(bottom);
+    return { count, copies, middle, initialIndex: middle * count + initial };
   }
 
   function wheelController(container, max, initial, onChange) {
-    buildWheel(container, max);
+    const meta = buildWheel(container, max, initial);
     const cells = Array.from(container.querySelectorAll(".cell"));
     let current = initial;
+    let correcting = false;
 
     function paint(index) {
       cells.forEach((c, i) => c.classList.toggle("is-center", i === index));
     }
 
+    function centerIndex(index) {
+      const value = ((index % meta.count) + meta.count) % meta.count;
+      return meta.middle * meta.count + value;
+    }
+
     function scrollTo(index, smooth) {
-      const clamped = Math.max(0, Math.min(max, index));
-      container.scrollTo({ top: clamped * CELL_H, behavior: smooth ? "smooth" : "auto" });
-      paint(clamped);
+      const safe = Math.max(0, Math.min(cells.length - 1, index));
+      container.scrollTo({ top: safe * CELL_H, behavior: smooth ? "smooth" : "auto" });
+      paint(safe);
     }
 
     let scrollTimer = null;
     container.addEventListener("scroll", () => {
+      if (correcting) return;
       clearTimeout(scrollTimer);
       scrollTimer = setTimeout(() => {
-        const index = Math.max(0, Math.min(max, Math.round(container.scrollTop / CELL_H)));
-        scrollTo(index, true);
-        if (index !== current) {
-          current = index;
-          tg?.HapticFeedback?.selectionChanged();
+        let index = Math.round(container.scrollTop / CELL_H);
+        index = Math.max(0, Math.min(cells.length - 1, index));
+        const value = ((index % meta.count) + meta.count) % meta.count;
+        const centered = centerIndex(index);
+        if (index < meta.count || index > meta.count * (meta.copies - 2)) {
+          correcting = true;
+          container.scrollTo({ top: centered * CELL_H, behavior: "auto" });
+          index = centered;
+          correcting = false;
+        } else {
+          scrollTo(index, true);
         }
-        onChange(index);
-      }, 120);
+        paint(index);
+        if (value !== current) {
+          current = value;
+          tg?.HapticFeedback?.selectionChanged();
+          onChange(value);
+        }
+      }, 70);
     });
 
-    scrollTo(initial, false);
-    paint(initial);
-    return { scrollTo, get value() { return current; } };
+    scrollTo(meta.initialIndex, false);
+    paint(meta.initialIndex);
+    return { scrollTo: (value, smooth = true) => scrollTo(centerIndex(value), smooth), get value() { return current; } };
   }
 
   function parsePrefillTime(value) {
@@ -499,6 +509,31 @@
     return data.item;
   }
 
+  function resetFormForNextReminder() {
+    taskText.value = "";
+    currentMode = "once";
+    segButtons.forEach((b) => b.classList.toggle("active", b.dataset.mode === "once"));
+    Object.entries(panes).forEach(([key, el]) => el.classList.toggle("hidden", key !== "once"));
+    selectedDays.clear();
+    dayPills.forEach((p) => p.classList.remove("active"));
+    intervalDays = 1;
+    renderInterval();
+    const today = localDateStr();
+    onceDate.value = today;
+    startDate.value = today;
+    const d = new Date();
+    selectedHour = d.getHours();
+    selectedMinute = d.getMinutes();
+    hoursWheel.scrollTo(selectedHour, false);
+    minutesWheel.scrollTo(selectedMinute, false);
+    headLogo.textContent = "⏰";
+    headSub.textContent = "Во сколько напомнить?";
+    if (fb) fb.textContent = "Сохранить";
+    validate();
+    taskText.focus();
+    loadRemoteReminders();
+  }
+
   async function handleSave() {
     if (saving) return;
     if (!validate()) {
@@ -530,9 +565,11 @@
       tg?.HapticFeedback?.notificationOccurred("success");
       if (tg?.MainButton) tg.MainButton.hideProgress();
       if (fb) fb.textContent = editing ? "Изменения сохранены ✓" : "Сохранено ✓";
-      setTimeout(() => {
-        try { tg?.close(); } catch (_) {}
-      }, 350);
+      if (!editing) {
+        setTimeout(() => resetFormForNextReminder(), 450);
+      } else {
+        setTimeout(() => { window.location.href = location.pathname; }, 500);
+      }
       return;
     } catch (apiError) {
       console.warn("Mini App API save failed, trying Telegram sendData", apiError);

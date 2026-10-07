@@ -75,14 +75,24 @@ export default async (req) => {
 
   try {
     if (req.method === 'GET') {
-      if (!botSyncAuthorized(req)) return json({ ok: false, error: 'forbidden' }, 403);
-      return json({ ok: true, reminders: await readAll() });
+      if (botSyncAuthorized(req)) {
+        return json({ ok: true, reminders: await readAll() });
+      }
+      const user = normalizeInitData(req.headers.get('x-telegram-init-data'));
+      if (!user) return json({ ok: false, error: 'forbidden' }, 403);
+      const all = await readAll();
+      return json({
+        ok: true,
+        user_id: Number(user.id),
+        reminders: all.filter((item) => Number(item.user_id) === Number(user.id)),
+      });
     }
 
     if (req.method !== 'POST' && req.method !== 'DELETE') return json({ ok: false, error: 'method_not_allowed' }, 405);
 
-    const user = normalizeInitData(req.headers.get('x-telegram-init-data'));
-    if (!user) return json({ ok: false, error: 'invalid_init_data' }, 401);
+    const botRequest = botSyncAuthorized(req);
+    const user = botRequest ? null : normalizeInitData(req.headers.get('x-telegram-init-data'));
+    if (!botRequest && !user) return json({ ok: false, error: 'invalid_init_data' }, 401);
 
     const store = getStore(STORE);
     const body = req.method === 'DELETE' ? await req.json() : await req.json();
@@ -91,11 +101,14 @@ export default async (req) => {
     if (req.method === 'DELETE') {
       if (!id) return json({ ok: false, error: 'missing_id' }, 400);
       const existing = await store.get(`r/${id}`, { type: 'json' });
-      if (!existing || Number(existing.user_id) !== Number(user.id)) return json({ ok: false, error: 'not_found' }, 404);
+      if (!existing) return json({ ok: false, error: 'not_found' }, 404);
+      const botDelete = botSyncAuthorized(req);
+      if (!botDelete && Number(existing.user_id) !== Number(user.id)) return json({ ok: false, error: 'not_found' }, 404);
       await store.delete(`r/${id}`);
       return json({ ok: true, deleted: id });
     }
 
+    if (botRequest || !user) return json({ ok: false, error: 'invalid_init_data' }, 401);
     validate(body);
     const item = {
       ...body,

@@ -923,17 +923,6 @@ body::after { right: -120px; top: 420px; background: var(--sunrise); }
 .hero-card::before {
   z-index: -1;
 }
-.time-wheel-wrap::after {
-  content: "ПРОБУЙ ЛИСТАТЬ";
-  position: absolute;
-  right: 13px;
-  bottom: 10px;
-  color: var(--text-dim);
-  opacity: .55;
-  font-size: 7px;
-  font-weight: 900;
-  letter-spacing: .12em;
-}
 
 /* ---------------- theme personalities ---------------- */
 :root[data-theme="classic"] .head-logo {
@@ -1070,3 +1059,40 @@ body::after { right: -120px; top: 420px; background: var(--sunrise); }
   :root[data-theme="resident"] .hero-card,
   :root[data-theme="strinova"] .hero-card { min-height: 188px; }
 }
+
+
+/* ============================================================
+   FINAL POLISH: компактный верх и чистые карточки
+   ============================================================ */
+.head { margin-bottom: 12px; }
+.hero-card {
+  min-height: 128px;
+  margin-bottom: 12px;
+  padding: 16px 18px;
+  border-radius: 20px;
+}
+.hero-copy { width: 62%; }
+.hero-kicker { font-size: 9px; letter-spacing: .14em; }
+.hero-copy h2 { margin: 4px 0 4px; font-size: 21px; }
+.hero-copy p { max-width: 210px; font-size: 11px; line-height: 1.35; }
+.hero-art { width: 54%; max-width: 250px; right: -35px; top: -8px; opacity: .82; }
+.hero-chips { display: none; }
+.time-wheel-wrap { height: 164px; margin-bottom: 12px; border-radius: 20px; }
+.time-wheel .cell { height: 54px; }
+.time-wheel-highlight { height: 54px; }
+.card { padding: 14px; margin-bottom: 10px; border-radius: 18px; }
+.card-label { margin-bottom: 8px; font-size: 13px; }
+.my-reminders-card { margin-top: 8px; }
+.mini-promo, .hint { display: none; }
+@media (max-width: 380px) {
+  .screen { padding-left: 14px; padding-right: 14px; }
+  .hero-card { min-height: 116px; }
+  .hero-copy { width: 68%; }
+  .hero-art { width: 48%; right: -25px; }
+}
+
+/* Final: remove decorative text overlays from themed hero cards. */
+.hero-card::before { content: none !important; }
+.hero-card .hero-art { display: none; }
+.hero-copy { width: 100%; }
+.hero-card { min-height: 108px; }
