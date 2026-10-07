@@ -1170,3 +1170,20 @@ body::after { right: -120px; top: 420px; background: var(--sunrise); }
 
 /* В редакторе кнопка сохранения — обычная, не липкая */
 .save-bar { position: static; margin: 14px 0 4px; }
+
+/* v9.1: звёздочки по всему экрану (раньше обрезались кругом из-за border-radius) */
+.ambient { overflow: hidden; }
+.ambient::before, .ambient::after {
+  border-radius: 0;
+  inset: -25%;
+  width: auto;
+  height: auto;
+}
+.ambient::after { background-position: 36px 36px; opacity: .6; }
+.ambient-a { transform: none; }
+.ambient-b { transform: rotate(-7deg); }
+
+/* v9.1: фон рисуем на html, иначе непрозрачный body перекрывает звёзды и свечение
+   (они были видны только ниже конца контента) */
+html { background: var(--bg); min-height: 100%; }
+body { background: transparent; min-height: 100vh; }
